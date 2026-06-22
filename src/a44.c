@@ -445,19 +445,25 @@ static void a44_conv_stereob(A44_HANDLE* handle, uint32_t pcm_bytes) {
     uint8_t d6 = 0;
     uint8_t d7 = 0;
 
-    // 1バイト目（Lのサンプル1 ＋ Lのサンプル2）
+    // onef d2,a3,d6 (L側のサンプル1)
     uint8_t code_l1 = a44_onef_core(*a1++, &d2, &a3);
-    d6 = (code_l1 << 4); // lsl.w #4, d6
+    d6 = (code_l1 << 4);
+
+    // onef d1,a2,d7 (R側のサンプル1)
+    uint8_t code_r1 = a44_onef_core(*a1++, &d1, &a2);
+    d7 = (code_r1 << 4);
+
+    // onef d2,a3,d6 (L側のサンプル2)
     uint8_t code_l2 = a44_onef_core(*a1++, &d2, &a3);
     d6 |= (code_l2 & 0x0F);
-    *a4++ = d6;
 
-    // 2バイト目（Rのサンプル1 ＋ Rのサンプル2）
-    uint8_t code_r1 = a44_onef_core(*a1++, &d1, &a2);
-    d7 = (code_r1 << 4); // lsl.w #4, d7
+    // onef d1,a2,d7 (R側のサンプル2)
     uint8_t code_r2 = a44_onef_core(*a1++, &d1, &a2);
     d7 |= (code_r2 & 0x0F);
-    *a4++ = d7;
+
+    // バッファへの書き出し
+    *a4++ = d6; // LのADPCM（サンプル1+2）
+    *a4++ = d7; // RのADPCM（サンプル1+2）
   }
 
   // 状態の保存
