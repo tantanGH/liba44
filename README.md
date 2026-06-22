@@ -1,7 +1,8 @@
 # liba44
 A44 Encoding/Decoding C Library for X680x0
 
-Otankonas氏による16bitPCMデータ向けADPCMエンコード・デコードライブラリADPCMLIB 0.02をCでリライトし、elf2x68k向けのライブラリとしたものです。
+Otankonas氏による16bitPCMデータ向けADPCMエンコード・デコードライブラリADPCMLIB 0.02をCでリライトし、elf2x68k向けのライブラリとしたものです。再コンパイルすれば64bit環境にも対応できる想定です。
+
 オリジナルのアーカイブは配布自由とのことなので、`ADPCMLIB.LZH`としてツリーに含めてあります。
 
 なお、オリジナルにあった以下のバグを修正してあります。
