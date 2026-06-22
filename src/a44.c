@@ -180,8 +180,8 @@ static void a44_buffer_making_internal(A44_HANDLE* handle) {
   }
 
   // 状態のリセット
-  handle->x1 = handle->cnva_add;
-  handle->lx1 = handle->cnva_add;
+  handle->x1 = (uintptr_t)decode_lut; //handle->cnva_add;
+  handle->lx1 = (uintptr_t)decode_lut; //handle->cnva_add;
   handle->back = 0;
   handle->lback = 0;
 }
@@ -518,8 +518,8 @@ void a44_ptoa_make_buffer(A44_HANDLE* handle) {
   a44_make_buffer_internal(handle);
 
   // ra, la の初期化
-  handle->ra = handle->cnva_add + 6; 
-  handle->la = handle->cnva_add + 6;
+  handle->ra = (uintptr_t)encode_lut + 6; //handle->cnva_add + 6; 
+  handle->la = (uintptr_t)encode_lut + 6; //handle->cnva_add + 6;
 }
 
 //
@@ -537,8 +537,8 @@ void a44_ptoa_init(A44_HANDLE* handle, int16_t mode) {
   handle->ly = 0;
 
   // 初期位置をベースアドレス+6にリセット
-  handle->ra = handle->cnva_add + 6;
-  handle->la = handle->cnva_add + 6;
+  handle->ra = (uintptr_t)encode_lut + 6; //handle->cnva_add + 6;
+  handle->la = (uintptr_t)encode_lut + 6; //handle->cnva_add + 6;
 }
 
 //
@@ -567,9 +567,9 @@ void a44_atop_make_buffer(A44_HANDLE* handle) {
   handle->stereo = 0; // clr.w stereo(a6)
 
   // テーブルの先頭アドレスを各ポインタ（インデックス）の初期値にする
-  handle->x1  = handle->cnva_add; // move.l cnva_add(a6), x1(a6)
-  handle->lx1 = handle->cnva_add; // move.l cnva_add(a6), lx1(a6)
-  handle->rx1 = handle->cnva_add; // move.l cnva_add(a6), rx1(a6)
+  handle->x1  = (uintptr_t)decode_lut; // handle->cnva_add; // move.l cnva_add(a6), x1(a6)
+  handle->lx1 = (uintptr_t)decode_lut; //handle->cnva_add; // move.l cnva_add(a6), lx1(a6)
+  handle->rx1 = (uintptr_t)decode_lut; //handle->cnva_add; // move.l cnva_add(a6), rx1(a6)
 
   // バックアップ用の値をクリア
   handle->back  = 0; // clr.l back(a6)
@@ -589,9 +589,9 @@ void a44_atop_init(A44_HANDLE* handle, int16_t mode) {
   handle->stereo = (int32_t)mode;
 
   // ポインタ（インデックス）をテーブルの先頭にリセット
-  handle->x1  = handle->cnva_add; // move.l cnva_add(a6), x1(a6)
-  handle->lx1 = handle->cnva_add; // move.l cnva_add(a6), lx1(a6)
-  handle->rx1 = handle->cnva_add; // move.l cnva_add(a6), rx1(a6)
+  handle->x1  = (uintptr_t)decode_lut; //handle->cnva_add; // move.l cnva_add(a6), x1(a6)
+  handle->lx1 = (uintptr_t)decode_lut; //handle->cnva_add; // move.l cnva_add(a6), lx1(a6)
+  handle->rx1 = (uintptr_t)decode_lut; //handle->cnva_add; // move.l cnva_add(a6), rx1(a6)
 
   // バックアップ状態のリセット
   handle->back  = 0; // clr.l back(a6)
@@ -631,7 +631,7 @@ void a44_atop_mem(A44_HANDLE* handle, uint8_t* save_addr) {
     *dst++ = (uint32_t)handle->back;  // 波形予測値（4バイト）
     
     // 絶対アドレス（uintptr_t）を、テーブル先頭からの「相対距離」に変換して4バイトで保存
-    uint32_t offset_x1 = (uint32_t)(handle->x1 - handle->cnva_add);
+    uint32_t offset_x1 = (uint32_t)(handle->x1 - (uintptr_t)decode_lut);
     *dst++ = offset_x1;
   } else {
     // ステレオ
@@ -639,8 +639,8 @@ void a44_atop_mem(A44_HANDLE* handle, uint8_t* save_addr) {
     *dst++ = (uint32_t)handle->lback; // 波形予測値（4バイト）
     
     // それぞれテーブル先頭からの「相対距離」に変換して4バイトで保存
-    uint32_t offset_rx1 = (uint32_t)(handle->rx1 - handle->cnva_add);
-    uint32_t offset_lx1 = (uint32_t)(handle->lx1 - handle->cnva_add);
+    uint32_t offset_rx1 = (uint32_t)(handle->rx1 - (uintptr_t)decode_lut);
+    uint32_t offset_lx1 = (uint32_t)(handle->lx1 - (uintptr_t)decode_lut);
     *dst++ = offset_rx1;
     *dst++ = offset_lx1;
   }
@@ -661,7 +661,7 @@ void a44_atop_set(A44_HANDLE* handle, const uint8_t* load_addr) {
     // 4バイトの「相対距離」として読み込む（符号拡張の罠を避けるため一度uint32_tで受ける）
     uint32_t offset_x1 = *src++;
     // 現在の環境のベースアドレス（32bit or 64bit）に相対距離を足して、ポインタとして復元
-    handle->x1 = handle->cnva_add + offset_x1;
+    handle->x1 = (uintptr_t)decode_lut + offset_x1;
   } else {
     // ステレオ
     handle->rback = (int32_t)*src++;
@@ -671,8 +671,8 @@ void a44_atop_set(A44_HANDLE* handle, const uint8_t* load_addr) {
     uint32_t offset_lx1 = *src++;
     
     // 現在の環境のベースアドレス（32bit or 64bit）にそれぞれの相対距離を足して復元
-    handle->rx1 = handle->cnva_add + offset_rx1;
-    handle->lx1 = handle->cnva_add + offset_lx1;
+    handle->rx1 = (uintptr_t)decode_lut + offset_rx1;
+    handle->lx1 = (uintptr_t)decode_lut + offset_lx1;
   }
 }
 
