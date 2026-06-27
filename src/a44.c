@@ -15,7 +15,7 @@ typedef struct {
   int32_t next_offset;      // 次のインデックス（loop1の段数）を指すためのバイトオフセット
 } DeclutElement;
 
-// エンコード・デコード用ルックアップテーブル領域
+// エンコード・デコード用LUT
 static uint8_t encode_lut[ A44_ENCODE_LUT_SIZE ];
 static uint8_t decode_lut[ A44_DECODE_LUT_SIZE ];
 
@@ -23,7 +23,7 @@ static uint8_t decode_lut[ A44_DECODE_LUT_SIZE ];
 static const int16_t table4[8] = { -1, -1, -1, -1, 2, 4, 6, 8 };
 static const int16_t table4W[8] = { -1, -1, -1, -1, 2, 4, 6, 8 };
 
-// YM2608互換 ステップサイズ基準値テーブル
+// ステップサイズ基準値テーブル
 static const int16_t table3[70] = {
   16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107,
   118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494,
@@ -35,7 +35,7 @@ static const int16_t table3[70] = {
 };
 
 //
-//  GET_VAL サブルーチン
+//  GET_VAL
 //
 static int16_t get_val(int16_t d2, int16_t d0) {
   d2 += d0; // ADD.W D0, D2
@@ -49,9 +49,9 @@ static int16_t get_val(int16_t d2, int16_t d0) {
 }
 
 //
-//  MAKE_BUFFER サブルーチン
+//  encoding LUTの作成 (MAKE_BUFFER)
 //
-static void a44_make_buffer_internal(A44_HANDLE* handle) {
+static void make_encoding_lut(A44_HANDLE* handle) {
 
   EnclutElement* lut = (EnclutElement*)encode_lut;
   uintptr_t buffer_base = (uintptr_t)lut;
@@ -110,9 +110,9 @@ static void a44_make_buffer_internal(A44_HANDLE* handle) {
 }
 
 //
-//  buffer_making: デコードテーブル（141,312バイト）の生成
+//  decoding LUTの作成 (buffer_making)
 //
-static void a44_buffer_making_internal(A44_HANDLE* handle) {
+static void make_decoding_lut(A44_HANDLE* handle) {
 
   uint16_t* a0 = (uint16_t*)decode_lut;
 
@@ -125,18 +125,15 @@ static void a44_buffer_making_internal(A44_HANDLE* handle) {
       int16_t d3 = *(int16_t*)((uintptr_t)table4 + d2); 
       d2 += 1;
             
-      int16_t d6 = *(int16_t*)((uintptr_t)table3 + d0*2); // wordテーブルからそのままの16bitとしてキャスト
-      
-      // 【重要】MC68000の mulu は16bit符号なし乗算
-      // レジスタの上位に符号拡張させないため、一度 uint32_t で受けて計算します
+      int16_t d6 = *(int16_t*)((uintptr_t)table3 + d0*2);
+
       uint32_t d2_32 = (uint32_t)(uint16_t)d2 * (uint32_t)(uint16_t)d6;
       
       if (d1 & 0x80) { 
-        // neg.l d2 (32bitとしての2の補数表現に変換)
         d2_32 = (uint32_t)(-(int32_t)d2_32);
       }
       
-      // asr.l #3, d2 (符号付きとして算術右シフトを行う)
+      // asr.l #3, d2
       int16_t diff1 = (int16_t)((int32_t)d2_32 >> 3);
 
       *a0++ = (uint16_t)diff1;
@@ -153,7 +150,6 @@ static void a44_buffer_making_internal(A44_HANDLE* handle) {
 
       d6 = *(int16_t*)((uintptr_t)table3 + d0*2);
       
-      // 後半も同様に完全な符号なし16bit乗算を再現
       uint32_t d2_32_late = (uint32_t)(uint16_t)d2 * (uint32_t)(uint16_t)d6;
       
       if (d1 & 0x08) { 
@@ -178,10 +174,11 @@ static void a44_buffer_making_internal(A44_HANDLE* handle) {
     }
   }
 
-  handle->x1 = (uintptr_t)decode_lut;
-  handle->lx1 = (uintptr_t)decode_lut;
-  handle->back = 0;
-  handle->lback = 0;
+// オリジナルのコードに入っているが無効化しておく
+//  handle->x1 = (uintptr_t)decode_lut;
+//  handle->lx1 = (uintptr_t)decode_lut;
+//  handle->back = 0;
+//  handle->lback = 0;
 }
 
 //
@@ -250,7 +247,7 @@ static void a44_conv_stereo(A44_HANDLE* handle, uint32_t adpcm_bytes) {
     uint8_t d3_r = *a2++;
     DeclutElement* slot_r = (DeclutElement*)(a1 + (d3_r << 3));
 
-    // 1サンプル目出力 (L/R交互にPCMバッファに書き込む)
+    // 1サンプル目出力
     d1 += slot_l->diff1;
     d2 += slot_r->diff1;
     *a3++ = (int16_t)d1; // L
@@ -726,13 +723,13 @@ void a44_ptoa_make_buffer(A44_HANDLE* handle) {
   handle->lx1 = 0;
 
   // bsr MAKE_BUFFER
-  a44_make_buffer_internal(handle);
+  make_encoding_lut(handle);
 
   // #BUFFER+6
   handle->ra = (uintptr_t)encode_lut + 6;
   handle->la = (uintptr_t)encode_lut + 6;
 
-  // 念の為
+  // オリジナルコードにはないが念の為
   handle->back = 0;
   handle->rback = 0;
   handle->lback = 0;
@@ -761,7 +758,7 @@ void a44_ptoa_init(A44_HANDLE* handle, int16_t mode) {
   handle->ra = (uintptr_t)encode_lut + 6;
   handle->la = (uintptr_t)encode_lut + 6;
 
-  // 念の為
+  // オリジナルコードにはないが念の為
   handle->back = 0;
   handle->rback = 0;
   handle->lback = 0;
@@ -827,19 +824,19 @@ void a44_atop_make_buffer(A44_HANDLE* handle) {
   // 初期値の設定（初期値はモノラル）
   handle->stereo = 0; // clr.w stereo(a6)
 
-  // テーブルの先頭アドレスを各ポインタ（インデックス）の初期値にする
-  handle->x1  = (uintptr_t)decode_lut; // handle->cnva_add; // move.l cnva_add(a6), x1(a6)
-  handle->lx1 = (uintptr_t)decode_lut; //handle->cnva_add; // move.l cnva_add(a6), lx1(a6)
-  handle->rx1 = (uintptr_t)decode_lut; //handle->cnva_add; // move.l cnva_add(a6), rx1(a6)
+  // 141,312バイトのデコード用ルックアップテーブルを生成
+  // bsr buffer_making
+  make_decoding_lut(handle);
 
-  // バックアップ用の値をクリア
+  // LUTの先頭アドレスを各ポインタ（インデックス）の初期値にする
+  handle->x1  = (uintptr_t)decode_lut;
+  handle->lx1 = (uintptr_t)decode_lut;
+  handle->rx1 = (uintptr_t)decode_lut;
+
+  // バックアップ状態をリセット
   handle->back  = 0; // clr.l back(a6)
   handle->lback = 0;
   handle->rback = 0;
-
-  // 141,312バイトのデコード用ルックアップテーブルを生成
-  // bsr buffer_making
-  a44_buffer_making_internal(handle);
 }
 
 //
@@ -864,8 +861,7 @@ void a44_atop_init(A44_HANDLE* handle, int16_t mode) {
 //  a44_atop_exec: ADPCM -> PCM 変換の実行
 //
 void a44_atop_exec(A44_HANDLE* handle, const uint8_t* adpcm_addr, uint32_t adpcm_bytes, uint8_t* pcm_addr) {
-  // move.l a0, ada_add(a6)
-  // move.l a1, pcma_add(a6)
+
   handle->ada_add  = (uintptr_t)adpcm_addr;
   handle->pcma_add = (uintptr_t)pcm_addr;
 
@@ -891,7 +887,7 @@ void a44_atop_mem(A44_HANDLE* handle, uint8_t* save_addr) {
     // モノラル
     *dst++ = (uint32_t)handle->back;  // 波形予測値（4バイト）
     
-    // 絶対アドレス（uintptr_t）を、テーブル先頭からの「相対距離」に変換して4バイトで保存
+    // 絶対アドレス（uintptr_t）を、テーブル先頭からの相対距離に変換して4バイトで保存
     uint32_t offset_x1 = (uint32_t)(handle->x1 - (uintptr_t)decode_lut);
     *dst++ = offset_x1;
   } else {
@@ -899,7 +895,7 @@ void a44_atop_mem(A44_HANDLE* handle, uint8_t* save_addr) {
     *dst++ = (uint32_t)handle->rback; // 波形予測値（4バイト）
     *dst++ = (uint32_t)handle->lback; // 波形予測値（4バイト）
     
-    // それぞれテーブル先頭からの「相対距離」に変換して4バイトで保存
+    // それぞれテーブル先頭からの相対距離に変換して4バイトで保存
     uint32_t offset_rx1 = (uint32_t)(handle->rx1 - (uintptr_t)decode_lut);
     uint32_t offset_lx1 = (uint32_t)(handle->lx1 - (uintptr_t)decode_lut);
     *dst++ = offset_rx1;
@@ -919,7 +915,7 @@ void a44_atop_set(A44_HANDLE* handle, const uint8_t* load_addr) {
     // モノラル
     handle->back = (int32_t)*src++; // 4バイトをそのまま符号付きで復元
     
-    // 4バイトの「相対距離」として読み込む（符号拡張の罠を避けるため一度uint32_tで受ける）
+    // 4バイトの相対距離として読み込む
     uint32_t offset_x1 = *src++;
     // 現在の環境のベースアドレス（32bit or 64bit）に相対距離を足して、ポインタとして復元
     handle->x1 = (uintptr_t)decode_lut + offset_x1;
