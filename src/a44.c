@@ -712,7 +712,6 @@ static uint8_t onef_l(A44_HANDLE* a44) {
 void a44_ptoa_make_buffer(A44_HANDLE* handle) {
 
   handle->stereo = 0;
-  handle->pad0   = 0;
 
   // cnva_add, pcma_add, ada_add は init では触らない（アセンブラ準拠）
 
@@ -745,7 +744,6 @@ void a44_ptoa_make_buffer(A44_HANDLE* handle) {
 void a44_ptoa_init(A44_HANDLE* handle, int16_t mode) {
 
   handle->stereo = mode;
-  handle->pad0   = 0;
 
   // cnva_add, pcma_add, ada_add は init では触らない（アセンブラ準拠）
 

@@ -13,8 +13,7 @@
 
 // ハンドル構造体
 typedef struct {
-    int16_t stereo;     // 0: mono, -1: stereo
-    int16_t pad0;
+    int32_t stereo;     // 0: mono, -1: stereo
     uintptr_t cnva_add;  // テーブルバッファのアドレス (未使用)
     uintptr_t pcma_add;  // PCM格納アドレス
     uintptr_t ada_add;   // ADPCM格納アドレス
