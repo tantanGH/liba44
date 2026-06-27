@@ -15,7 +15,7 @@
 typedef struct {
     int16_t stereo;     // 0: mono, -1: stereo
     int16_t pad0;
-//    uintptr_t cnva_add;  // テーブルバッファのアドレス (デコードLUTも内部に持つようにしたので不要になった)
+    uintptr_t cnva_add;  // テーブルバッファのアドレス (未使用)
     uintptr_t pcma_add;  // PCM格納アドレス
     uintptr_t ada_add;   // ADPCM格納アドレス
     int32_t x, y;
