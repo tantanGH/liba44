@@ -121,67 +121,72 @@ static void a44_make_buffer_internal(A44_HANDLE* handle) {
 //
 static void a44_buffer_making_internal(A44_HANDLE* handle) {
 
-  DeclutElement* lut = (DeclutElement*)decode_lut;
+  uint16_t* a0 = (uint16_t*)decode_lut;
 
-  int32_t a0_idx = 0; // 要素単位のインデックス
-
-  for (int16_t d7 = 0; d7 <= 68; d7++) { // loop1: 0 〜 bufx(68)
-    for (int16_t d1 = 0; d1 <= 255; d1++) { // loop2: 0 〜 255 (bcc loop2 で1周)
+  for (int16_t d7 = 0; d7 <= 68; d7++) { 
+    for (int16_t d1 = 0; d1 <= 255; d1++) { 
             
       // --- 前半4bitの処理 ---
       int32_t d0 = d7;
-      int16_t d2 = (d1 & 0x70) >> 3; // and.w #$70, d2 / lsr.b #3
-      int16_t d3 = table4[d2];
+      int16_t d2 = (d1 & 0x70) >> 3; 
+      int16_t d3 = *(int16_t*)((uintptr_t)table4 + d2); 
       d2 += 1;
             
-      int32_t d6 = table3[d0]; // wordテーブルなのでそのままキャスト
-      int32_t d2_mulu = d6 * d2;
-      if (d1 & 0x80) { // btst #7, d1
-        d2_mulu = -d2_mulu;
+      int16_t d6 = *(int16_t*)((uintptr_t)table3 + d0*2); // wordテーブルからそのままの16bitとしてキャスト
+      
+      // 【重要】MC68000の mulu は16bit符号なし乗算
+      // レジスタの上位に符号拡張させないため、一度 uint32_t で受けて計算します
+      uint32_t d2_32 = (uint32_t)(uint16_t)d2 * (uint32_t)(uint16_t)d6;
+      
+      if (d1 & 0x80) { 
+        // neg.l d2 (32bitとしての2の補数表現に変換)
+        d2_32 = (uint32_t)(-(int32_t)d2_32);
       }
-      int16_t diff1 = (int16_t)((d2_mulu < 0 ? (d2_mulu - 7) : d2_mulu) / 8);
+      
+      // asr.l #3, d2 (符号付きとして算術右シフトを行う)
+      int16_t diff1 = (int16_t)((int32_t)d2_32 >> 3);
 
-      // インデックスの更新と境界チェック
-      d0 += (int8_t)d3; // add.b d3, d0
-      if (d0 < 0) d0 = 0;
+      *a0++ = (uint16_t)diff1;
+
+      // 段数d0の更新
+      d0 += (int8_t)d3; 
+      if (d0 < 0)  d0 = 0;
       if (d0 > 68) d0 = 68;
 
       // --- 後半4bitの処理 ---
-      d2 = (d1 & 0x07) << 1; // and.w #$7, d2 / lsl.b #1
-      d3 = table4[d2];
+      d2 = (d1 & 0x07) << 1; 
+      d3 = *(int16_t*)((uintptr_t)table4 + d2); 
       d2 += 1;
 
-      d6 = table3[d0];
-      d2_mulu = d6 * d2;
-      if (d1 & 0x08) { // btst #3, d1
-        d2_mulu = -d2_mulu;
+      d6 = *(int16_t*)((uintptr_t)table3 + d0*2);
+      
+      // 後半も同様に完全な符号なし16bit乗算を再現
+      uint32_t d2_32_late = (uint32_t)(uint16_t)d2 * (uint32_t)(uint16_t)d6;
+      
+      if (d1 & 0x08) { 
+        d2_32_late = (uint32_t)(-(int32_t)d2_32_late);
       }
-      int16_t diff2 = (int16_t)((d2_mulu < 0 ? (d2_mulu - 7) : d2_mulu) / 8);
+      int16_t diff2 = (int16_t)((int32_t)d2_32_late >> 3);
+
+      *a0++ = (uint16_t)diff2;
 
       d0 += (int8_t)d3;
-      if (d0 < 0) d0 = 0;
+      if (d0 < 0)  d0 = 0;
       if (d0 > 68) d0 = 68;
 
       // --- 次のテーブルへの相対アドレス計算 ---
-      // アセンブラ: lsl.l #3, d0 / lsl.l #8, d0 は 「d0 * 2048」を意味する
-      //  = 次の段（d0）の先頭（256要素 * 8バイト = 2048バイト）へのアドレス計算
-      uintptr_t next_table_addr = (uintptr_t)lut + (d0 * 256 * sizeof(DeclutElement));
-      uintptr_t current_a0_addr = (uintptr_t)&lut[a0_idx].next_offset;
+      uintptr_t next_table_addr = (uintptr_t)decode_lut + (d0 * 2048);
+      uintptr_t current_a0_addr = (uintptr_t)a0; 
             
       int32_t next_offset = (int32_t)(next_table_addr - current_a0_addr);
 
-      // テーブルへ書き込み
-      lut[a0_idx].diff1 = diff1;
-      lut[a0_idx].diff2 = diff2;
-      lut[a0_idx].next_offset = next_offset;
-            
-      a0_idx++;
+      *a0++ = (uint16_t)((next_offset >> 16) & 0xFFFF);
+      *a0++ = (uint16_t)(next_offset & 0xFFFF);
     }
   }
 
-  // 状態のリセット
-  handle->x1 = (uintptr_t)decode_lut; //handle->cnva_add;
-  handle->lx1 = (uintptr_t)decode_lut; //handle->cnva_add;
+  handle->x1 = (uintptr_t)decode_lut;
+  handle->lx1 = (uintptr_t)decode_lut;
   handle->back = 0;
   handle->lback = 0;
 }
@@ -353,156 +358,359 @@ static void a44_conv_stereon(A44_HANDLE* handle, uint32_t adpcm_bytes) {
 }
 
 //
-//  onef マクロ
-//  引数のポインタを経由して、現在の予測値(RD)とテーブルポインタ(RA)を更新し、戻り値でコードを返す
+//  onef マクロ (d2,a3,d6) for R
 //
-static uint8_t a44_onef_core(int16_t pcm_sample, int32_t* p_rd, EnclutElement** p_ra) {
+static uint8_t onef_r(A44_HANDLE* a44) {
 
-  EnclutElement* ra = *p_ra;
-  int32_t rd = *p_rd;
-  uint8_t code = 0;
+  // 戻すべき 4bit ADPCMコード
+  uint8_t reg_d6_val = 0;
 
-  // 1. 差分の計算 (move.w (a1)+, d5 / sub.w RD, d5)
-  int32_t d5 = pcm_sample - (int16_t)rd;
+  // 16bitPCMデータの読み出し
+  // move.w	(a1)+,d5
+  int16_t pcm_value = *(int16_t*)(a44->pcma_add);
+  a44->pcma_add += 2;
 
-  // 2. 符号ビットの決定
-  if (d5 < 0) {
-    d5 = -d5;
-    code |= 0x08; // 符号ビット(Bit3)をセット
+  // 予測値との差分
+  // sub.w d2, d5    
+  int16_t d5v = (int16_t)pcm_value - (int16_t)a44->ry; 
+
+  // 絶対値化と符号ビットのセット    
+	//	bpl.w	@f
+  if (d5v < 0) {
+    d5v = -d5v;          // neg.w d5
+    reg_d6_val |= 0x08;  // or.b #$8, d6
   }
 
-  // 3. ポインタ依存を排除した二分探索
-  int idx = 0;
-  if (d5 >= ra->plus_scale[2]) {
-    // 1回目のBCC: RAは plus_scale[4] の位置へ移動している
-    if (d5 >= ra->plus_scale[4]) {
-      // 2回目のBCC: (RA)+ により、判定直後にRAは実質 plus_scale[5] へ進む
-      // 3回目の判定
-      if (d5 >= ra->plus_scale[5]) {
-        idx = (d5 >= ra->plus_scale[6]) ? 7 : 6;
-      } else {
-        idx = 5;
-      }
+  // 二分探索1回目
+  // @@:
+  //   cmp.w	(a3),d5		* 4/8
+	//	 bcc.w	1f
+	//	 subq.w	#4,a3
+	//	 bra	@f
+	// 1:	
+  //   addq.w	#4,a3
+	// @@:
+  int16_t a3v_1 = *((int16_t*)a44->ra);
+  if (d5v >= a3v_1) {
+    // addq.w	#4,a3
+    a44->ra += 4;
+  } else {
+    // subq.w	#4,a3
+    a44->ra -= 4;
+  }
+
+  // 二分探索2回目
+	// @@:	
+  //  cmp.w	(a3)+,d5
+	//  bcc.w	@f
+	//	subq.w	#4,a3
+	// @@:    
+  int16_t a3v_2 = *(int16_t*)(a44->ra);
+  a44->ra += 2;
+  if (d5v >= a3v_2) {
+    // bcc.w @f
+  } else {
+    // subq.w #4, a3
+    a44->ra -= 4; 
+  }
+
+  // 二分探索3回目
+  // @@:	
+  //  cmp.w	(a3),d5
+	//	bcs	@f
+	//	addq.w	#2,a3
+  // @@:
+  int16_t a3v_3 = *(int16_t*)(a44->ra);
+  if (d5v >= a3v_3) {
+    // addq.w #2, a3
+    a44->ra += 2; 
+  } else {
+    // bcs @f
+  }
+
+  // ベースアドレス確定
+  // @@:
+  //  addq.w	#8,a3
+	//	addq.w	#8,a3
+  a44->ra += 16;
+
+  //  btst	#3,d6
+  if ((reg_d6_val & 0x08) == 0) {
+        
+    // プラス側予測値更新
+
+    //	add.w (a3),d2
+    int32_t next_ry = (int32_t)a44->ry + (*(int16_t*)(a44->ra));
+
+    //  bvc 3f
+    if (next_ry >= -32768 && next_ry <= 32767) {
+      // bvc 3f 成立
+      a44->ry = (int16_t)next_ry;
+      // bvc 3f
+      a44->ra += 16;
     } else {
-      // 2回目のBCS: subq #4 により、RAは実質 plus_scale[3] へ戻る
-      // 3回目の判定
-      idx = (d5 >= ra->plus_scale[3]) ? 4 : 3;
+
+      // プラス側オーバーフロー補正
+
+      // sub.w	(a3),d2
+      //next_ry -= delta;         // a44->ryを直接いじったわけではないので、これは不要
+
+      // move.w	32(a3),d5
+      int16_t d5v = *(int16_t*)(a44->ra + 32);
+
+      // beq @f
+      if (d5v != 0) {
+        // beq @f 不成立
+        // add.w -(a3), d2
+        a44->ra -= 2;                 
+        a44->ry += *(int16_t*)(a44->ra);
+        // bra 3f
+        a44->ra += 16;
+      } else {
+        // beq @f 成立
+        // or.b #$8, d2
+        a44->ry |= 0x08;
+        // add.w 16(a3), d2
+        a44->ry += *(int16_t*)(a44->ra + 16);
+        // bra 3f
+        a44->ra += 16;
+      }
     }
   } else {
-    // 1回目のBCS: RAは plus_scale[0] の位置へ移動している
-    if (d5 >= ra->plus_scale[0]) {
-      // 2回目のBCC: (RA)+ により、判定直後にRAは実質 plus_scale[1] へ進む
-      // 3回目の判定
-      idx = (d5 >= ra->plus_scale[1]) ? 2 : 1;
+
+    // マイナス側予測値更新
+
+    //  addq.w #8, a3
+    //  addq.w #8, a3
+    a44->ra += 16;
+
+    //	add.w (a3),d2
+    int32_t next_ry = (int32_t)a44->ry + (*(int16_t*)(a44->ra));
+
+    //  bvc 1f
+    if (next_ry >= -32768 && next_ry <= 32767) {
+      // bvc 1f 成立
+      a44->ry = (int16_t)next_ry;
     } else {
-      // 2回目のBCS: subq #4 により、RAは実質 plus_scale[0] よりさらに手前へ戻る
-      // 3回目の判定
-      idx = 0;
+
+      // マイナス側オーバーフロー補正
+
+      // move.w 16(a3), d5
+      int16_t d5v = *(int16_t*)(a44->ra + 16);
+
+      // beq @f
+      if (d5v != 0) {
+        // beq @f 不成立
+        // add.w -(a3), d2
+        a44->ra -= 2;
+        a44->ry += *(int16_t*)(a44->ra);
+      } else {
+        // beq @f 成立
+        // and.b #$F7, d6 (符号ビットを落とす)
+        reg_d6_val &= 0xF7;
+
+        // add.w -16(a3), d2
+        a44->ry += *(int16_t*)(a44->ra - 16);
+      }
     }
   }
 
-  // 下位3ビットに決定したインデックス(0〜7)をマージ
-  code |= (idx & 0x07);
+	// 1:
+	//	addq.w	#8,a3
+	//	addq.w	#8,a3
+  a44->ra += 16;
 
-  // 4. 予測値(RD)の更新とクリッピング
-  int32_t diff = (code & 0x08) ? ra->minus_scale[idx] : ra->plus_scale[idx];
-  int32_t next_rd = rd + diff;
+  // ADPCMコードの確定
+  //  or.w (a3), d6
+  reg_d6_val |= *((uint16_t*)(a44->ra));
 
-  if (next_rd > 32767)  next_rd = 32767;
-  if (next_rd < -32768) next_rd = -32768;
-  rd = next_rd;
+	//	addq.w	#8,a3
+  //	addq.w	#8,a3
+  a44->ra += 16;
 
-  // 5. 次のインデックス段へのポインタ更新
-  uintptr_t current_offset_addr = (uintptr_t)&(ra->next_offset[idx]);
-  int16_t rel_offset = ra->next_offset[idx];
-  uintptr_t next_ra_addr = current_offset_addr + rel_offset;
+  // 次回のためのポインタ更新 
+	//	add.w	(a3),a3
+  a44->ra += *((int16_t*)(a44->ra));
 
-  // 6. 状態を戻す
-  *p_rd = rd;
-  *p_ra = (EnclutElement*)next_ra_addr;
-
-  return code;
+  return reg_d6_val;
 }
 
 //
-//  conv_stereob: ステレオエンコード本体
+//  onef マクロ (d1,a2,d7) for L
 //
-static void a44_conv_stereob(A44_HANDLE* handle, uint32_t pcm_bytes) {
+static uint8_t onef_l(A44_HANDLE* a44) {
 
-  // 1サンプルあたりL/Rで4バイト
-  uint32_t loops = pcm_bytes / 4; 
-  if (loops == 0) return;
+  // 戻すべき 4bit ADPCMコード
+  uint8_t reg_d7_val = 0;
 
-  const int16_t* a1 = (const int16_t*)handle->pcma_add;
-  EnclutElement* a2 = (EnclutElement*)handle->ra;
-  EnclutElement* a3 = (EnclutElement*)handle->la;
-  uint8_t* a4 = (uint8_t*)handle->ada_add;
+  // 16bitPCMデータの読み出し
+  // move.w	(a1)+,d5
+  int16_t pcm_value = *(int16_t*)(a44->pcma_add);
+  a44->pcma_add += 2;
 
-  int32_t d2 = handle->ly;
-  int32_t d1 = handle->ry;
+  // 予測値との差分
+  // sub.w d1, d5    
+  int16_t d5v = (int16_t)pcm_value - (int16_t)a44->ly; 
 
-  for (uint32_t i = 0; i < loops; i++) {
-    uint8_t d6 = 0;
-    uint8_t d7 = 0;
-
-    // onef d2,a3,d6 (L側のサンプル1)
-    uint8_t code_l1 = a44_onef_core(*a1++, &d2, &a3);
-    d6 = (code_l1 << 4);
-
-    // onef d1,a2,d7 (R側のサンプル1)
-    uint8_t code_r1 = a44_onef_core(*a1++, &d1, &a2);
-    d7 = (code_r1 << 4);
-
-    // onef d2,a3,d6 (L側のサンプル2)
-    uint8_t code_l2 = a44_onef_core(*a1++, &d2, &a3);
-    d6 |= (code_l2 & 0x0F);
-
-    // onef d1,a2,d7 (R側のサンプル2)
-    uint8_t code_r2 = a44_onef_core(*a1++, &d1, &a2);
-    d7 |= (code_r2 & 0x0F);
-
-    // バッファへの書き出し
-    *a4++ = d6; // LのADPCM（サンプル1+2）
-    *a4++ = d7; // RのADPCM（サンプル1+2）
+  // 絶対値化と符号ビットのセット
+	//	bpl.w	@f
+  if (d5v < 0) {
+    d5v = -d5v;          // neg.w d5
+    reg_d7_val |= 0x08;  // or.b #$8, d7
   }
 
-  // 状態の保存
-  handle->ry = d1;
-  handle->ra = (uintptr_t)a2;
-  handle->ly = d2;
-  handle->la = (uintptr_t)a3;
-  handle->pcma_add = (uintptr_t)a1;
-  handle->ada_add  = (uintptr_t)a4;
-}
-
-//
-//  conv_monob: モノラルエンコード本体
-//
-static void a44_conv_monob(A44_HANDLE* handle, uint32_t pcm_bytes) {
-
-  uint32_t loops = pcm_bytes / 4; // 1回で2サンプル（計4バイト）処理
-  if (loops == 0) return;
-
-  const int16_t* a1 = (const int16_t*)handle->pcma_add;
-  EnclutElement* a3 = (EnclutElement*)handle->ra;
-  uint8_t* a4 = (uint8_t*)handle->ada_add;
-
-  int32_t d2 = handle->y;
-
-  for (uint32_t i = 0; i < loops; i++) {
-    uint8_t d6 = 0;
-
-    uint8_t code1 = a44_onef_core(*a1++, &d2, &a3);
-    d6 = (code1 << 4);
-    uint8_t code2 = a44_onef_core(*a1++, &d2, &a3);
-    d6 |= (code2 & 0x0F);
-    *a4++ = d6;
+  // 二分探索1回目
+  // @@:
+  //   cmp.w	(a2),d5		* 4/8
+	//	 bcc.w	1f
+	//	 subq.w	#4,a2
+	//	 bra	@f
+	// 1:	
+  //   addq.w	#4,a2
+	// @@:
+  int16_t a2v_1 = *((int16_t*)a44->la);
+  if (d5v >= a2v_1) {
+    // addq.w	#4,a2
+    a44->la += 4;
+  } else {
+    // subq.w	#4,a2
+    a44->la -= 4;
   }
 
-  handle->y = d2;
-  handle->ra = (uintptr_t)a3;
-  handle->pcma_add = (uintptr_t)a1;
-  handle->ada_add  = (uintptr_t)a4;
+  // 二分探索2回目
+	// @@:	
+  //  cmp.w	(a2)+,d5
+	//  bcc.w	@f
+	//	subq.w	#4,a2
+	// @@:    
+  int16_t a2v_2 = *(int16_t*)(a44->la);
+  a44->la += 2;
+  if (d5v >= a2v_2) {
+    // bcc.w @f
+  } else {
+    // subq.w #4, a2
+    a44->la -= 4; 
+  }
+
+  // 二分探索3回目
+  // @@:	
+  //  cmp.w	(a2),d5
+	//	bcs	@f
+	//	addq.w	#2,a2
+  // @@:
+  int16_t a2v_3 = *(int16_t*)(a44->la);
+  if (d5v >= a2v_3) {
+    // addq.w #2, a2
+    a44->la += 2; 
+  } else {
+    // bcs @f
+  }
+
+  // ベースアドレス確定
+  // @@:
+  //  addq.w	#8,a2
+	//	addq.w	#8,a2
+  a44->la += 16;
+
+  //  btst	#3,d7
+  if ((reg_d7_val & 0x08) == 0) {
+        
+    // プラス側予測値更新
+
+    //	add.w	(a2),d1
+    int32_t next_ly = (int32_t)a44->ly + (*(int16_t*)(a44->la));
+
+    //  bvc 3f
+    if (next_ly >= -32768 && next_ly <= 32767) {
+      // bvc 3f 成立
+      // オーバーフローしていない
+      a44->ly = (int16_t)next_ly;
+      // bvc 3f
+      a44->la += 16;
+    } else {
+
+      // プラス側オーバーフロー補正
+
+      // sub.w	(a2),d1
+      //next_ly -= delta;         // a44->lyを直接いじったわけではないので、これは不要
+
+      // move.w	32(a2),d5
+      int16_t d5v = *(int16_t*)(a44->la + 32);
+
+      // beq @f
+      if (d5v != 0) {
+        // beq @f 不成立
+        // add.w -(a2), d1
+        a44->la -= 2;                 
+        a44->ly += *(int16_t*)(a44->la);
+        // bra 3f
+        a44->la += 16;
+      } else {
+        // beq @f 成立
+        // or.b #$8, d1
+        a44->ly |= 0x08;
+        // add.w 16(a2), d1
+        a44->ly += *(int16_t*)(a44->la + 16);
+        // bra 3f
+        a44->la += 16;
+      }
+    }
+
+  } else {
+
+    // マイナス側予測値更新
+        
+    // addq.w #8, a2
+    // addq.w #8, a2
+    a44->la += 16;
+
+    // add.w	(a2),d1
+    int32_t next_ly = (int32_t)a44->ly + (*(int16_t*)(a44->la));
+
+    // bvc 1f
+    if (next_ly >= -32768 && next_ly <= 32767) {
+      // bvc 1f 成立
+      a44->ly = (int16_t)next_ly;
+    } else {
+
+      // マイナス側オーバーフロー補正
+
+      // move.w 16(a2), d5
+      int16_t d5v = *(int16_t*)(a44->la + 16);
+
+      // beq @f
+      if (d5v != 0) {
+        // beq @f 不成立
+        // add.w -(a2), d1
+        a44->la -= 2;
+        a44->ly += *(int16_t*)(a44->la);
+      } else {
+        // beq @f 成立
+        // and.b #$F7, d7 (符号ビットを落とす)
+        reg_d7_val &= 0xF7;
+
+        // add.w -16(a2), d1
+        a44->ly += *(int16_t*)(a44->la - 16);
+      }
+    }
+  }
+
+	// 1:
+	//	addq.w	#8,a2
+	//	addq.w	#8,a2
+  a44->la += 16;
+
+  //  or.w (a2), d7
+  reg_d7_val |= *((uint16_t*)(a44->la));
+
+	//	addq.w	#8,a2
+	//	addq.w	#8,a2
+  a44->la += 16;
+
+	//	add.w	(a2),a2
+  a44->la += *((int16_t*)(a44->la));
+
+  return reg_d7_val;
 }
 
 //
@@ -510,22 +718,33 @@ static void a44_conv_monob(A44_HANDLE* handle, uint32_t pcm_bytes) {
 //
 void a44_ptoa_make_buffer(A44_HANDLE* handle) {
 
-  // 1. 各変数の初期化（ptoa_init と共通の処理）
-  handle->stereo = 0; // 初期値はモノラル (clr.w stereo(a6))
-  handle->x  = 0;     // clr.l x(a6)
-  handle->y  = 0;
-  handle->rx = 0;
-  handle->ry = 0;
-  handle->lx = 0;
-  handle->ly = 0;
+  handle->stereo = 0;
+  handle->pad0   = 0;
 
-  // 変換バッファ（テーブル）の生成
+  // cnva_add, pcma_add, ada_add は init では触らない（アセンブラ準拠）
+
+  handle->x   = 0;
+  handle->y   = 0;
+  handle->rx  = 0;
+  handle->ry  = 0;
+  handle->lx  = 0;
+  handle->ly  = 0;
+  handle->x1  = 0;
+  handle->rx1 = 0;
+  handle->lx1 = 0;
+
   // bsr MAKE_BUFFER
   a44_make_buffer_internal(handle);
 
-  // ra, la の初期化
-  handle->ra = (uintptr_t)encode_lut + 6; //handle->cnva_add + 6; 
-  handle->la = (uintptr_t)encode_lut + 6; //handle->cnva_add + 6;
+  // #BUFFER+6
+  uintptr_t base_buffer = *(uint32_t*)encode_lut; 
+  handle->ra = base_buffer + 6;
+  handle->la = base_buffer + 6;
+
+  // 念の為
+  handle->back = 0;
+  handle->rback = 0;
+  handle->lback = 0;
 }
 
 //
@@ -533,18 +752,30 @@ void a44_ptoa_make_buffer(A44_HANDLE* handle) {
 //
 void a44_ptoa_init(A44_HANDLE* handle, int16_t mode) {
 
-  handle->stereo = (int32_t)mode;
+  handle->stereo = mode;
+  handle->pad0   = 0;
 
-  handle->x  = 0;
-  handle->y  = 0;
-  handle->rx = 0;
-  handle->ry = 0;
-  handle->lx = 0;
-  handle->ly = 0;
+  // cnva_add, pcma_add, ada_add は init では触らない（アセンブラ準拠）
 
-  // 初期位置をベースアドレス+6にリセット
-  handle->ra = (uintptr_t)encode_lut + 6; //handle->cnva_add + 6;
-  handle->la = (uintptr_t)encode_lut + 6; //handle->cnva_add + 6;
+  handle->x   = 0;
+  handle->y   = 0;
+  handle->rx  = 0;
+  handle->ry  = 0;
+  handle->lx  = 0;
+  handle->ly  = 0;
+  handle->x1  = 0;
+  handle->rx1 = 0;
+  handle->lx1 = 0;
+
+  // #BUFFER+6
+  uintptr_t base_buffer = *(uint32_t*)encode_lut; 
+  handle->ra = base_buffer + 6;
+  handle->la = base_buffer + 6;
+
+  // 念の為
+  handle->back = 0;
+  handle->rback = 0;
+  handle->lback = 0;
 }
 
 //
@@ -555,12 +786,47 @@ void a44_ptoa_exec(A44_HANDLE* handle, const uint8_t* pcm_addr, uint32_t pcm_byt
   handle->pcma_add = (uintptr_t)pcm_addr;
   handle->ada_add  = (uintptr_t)adpcm_addr;
 
-  if (handle->stereo == 0) {
-    // bsr conv_monob
-    a44_conv_monob(handle, pcm_bytes);
+  if (handle->stereo != 0) {
+
+    int32_t remain_bytes = pcm_bytes;
+
+    while (remain_bytes > 0) {
+
+      uint32_t adpcm_value_l = onef_l(handle);
+      adpcm_value_l <<= 4;
+
+      uint32_t adpcm_value_r = onef_r(handle);
+      adpcm_value_r <<= 4;
+
+      adpcm_value_l |= onef_l(handle);
+      adpcm_value_r |= onef_r(handle);
+
+      *((uint8_t*)handle->ada_add) = (uint8_t)adpcm_value_l;
+      handle->ada_add++;
+
+      *((uint8_t*)handle->ada_add) = (uint8_t)adpcm_value_r;
+      handle->ada_add++;
+
+      remain_bytes -= 8;
+
+    }
+
   } else {
-    // bsr conv_stereob
-    a44_conv_stereob(handle, pcm_bytes);
+
+    int32_t remain_bytes = pcm_bytes;
+
+    while (remain_bytes > 0) {
+
+      uint32_t adpcm_value = onef_l(handle);
+      adpcm_value <<= 4;
+
+      adpcm_value |= onef_l(handle);
+
+      *((uint8_t*)handle->ada_add) = (uint8_t)adpcm_value;
+      handle->ada_add++;
+
+      remain_bytes -= 4;
+    }
   }
 }
 
