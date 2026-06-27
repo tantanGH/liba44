@@ -109,7 +109,7 @@ static void make_encoding_lut(A44_HANDLE* handle) {
       uintptr_t current_a3_addr = (uintptr_t)&(slot->next_offset[i]);
 
       int32_t rel_addr = (int32_t)(next_slot_addr - current_a3_addr);
-      rel_addr += 6; // Compensate for M68000 PC pre-fetch/pipeline offset
+      rel_addr += 6;
 
       slot->next_offset[i] = (int16_t)rel_addr;
     }
@@ -372,19 +372,19 @@ static void a44_conv_stereon(A44_HANDLE* handle, uint32_t adpcm_bytes) {
 //
 //  onef_r: Replaces the core encoder macro for the Right channel
 //
-static uint8_t onef_r(A44_HANDLE* a44) {
+static uint8_t onef_r(A44_HANDLE* handle) {
 
   // 4-bit ADPCM code to be returned
   uint8_t reg_d6_val = 0;
 
   // Read 16-bit linear PCM input sample
   // move.w (a1)+,d5
-  int16_t pcm_value = *(int16_t*)(a44->pcma_add);
-  a44->pcma_add += 2;
+  int16_t pcm_value = *(int16_t*)(handle->pcma_add);
+  handle->pcma_add += 2;
 
   // Calculate delta from the current predictor value
   // sub.w d2, d5    
-  int16_t d5v = (int16_t)pcm_value - (int16_t)a44->ry; 
+  int16_t d5v = (int16_t)pcm_value - (int16_t)handle->ry; 
 
   // Compute absolute delta and set the ADPCM sign bit if negative
   // bpl.w @f
@@ -400,32 +400,32 @@ static uint8_t onef_r(A44_HANDLE* a44) {
   // bra  @f
   // 1: 
   // addq.w #4,a3
-  int16_t a3v_1 = *((int16_t*)a44->ra);
+  int16_t a3v_1 = *((int16_t*)handle->ra);
   if (d5v >= a3v_1) {
-    a44->ra += 4;
+    handle->ra += 4;
   } else {
-    a44->ra -= 4;
+    handle->ra -= 4;
   }
 
   // --- Binary Search Stage 2 ---
   // cmp.w (a3)+,d5
   // bcc.w @f
   // subq.w  #4,a3
-  int16_t a3v_2 = *(int16_t*)(a44->ra);
-  a44->ra += 2; // Emulate M68000 post-increment
+  int16_t a3v_2 = *(int16_t*)(handle->ra);
+  handle->ra += 2;
   if (d5v >= a3v_2) {
     // bcc.w @f
   } else {
-    a44->ra -= 4; 
+    handle->ra -= 4; 
   }
 
   // --- Binary Search Stage 3 ---
   // cmp.w (a3),d5
   // bcs @f
   // addq.w  #2,a3
-  int16_t a3v_3 = *(int16_t*)(a44->ra);
+  int16_t a3v_3 = *(int16_t*)(handle->ra);
   if (d5v >= a3v_3) {
-    a44->ra += 2; 
+    handle->ra += 2; 
   } else {
     // bcs @f
   }
@@ -433,7 +433,7 @@ static uint8_t onef_r(A44_HANDLE* a44) {
   // Finalize the base address offset within the LUT slot
   // addq.w  #8,a3
   // addq.w  #8,a3
-  a44->ra += 16;
+  handle->ra += 16;
 
   // Evaluate the processed sign bit to update the predictor
   // btst  #3,d6
@@ -442,30 +442,30 @@ static uint8_t onef_r(A44_HANDLE* a44) {
     // --- Positive Delta Predictor Update ---
 
     // add.w (a3),d2
-    int32_t next_ry = (int32_t)a44->ry + (*(int16_t*)(a44->ra));
+    int32_t next_ry = (int32_t)handle->ry + (*(int16_t*)(handle->ra));
 
     // Check for 16-bit signed overflow/underflow (bvc 3f)
     if (next_ry >= -32768 && next_ry <= 32767) {
       // No overflow: Accept the calculated predictor and jump forward
-      a44->ry = (int16_t)next_ry;
-      a44->ra += 16;
+      handle->ry = (int16_t)next_ry;
+      handle->ra += 16;
     } else {
 
       // --- Positive Overflow Mitigation Branch ---
       // Re-read and fallback to safe scale values
-      int16_t d5v = *(int16_t*)(a44->ra + 32);
+      int16_t d5v = *(int16_t*)(handle->ra + 32);
 
       // beq @f
       if (d5v != 0) {
         // Fallback option A: Pre-decrement and accumulate
-        a44->ra -= 2;                 
-        a44->ry += *(int16_t*)(a44->ra);
-        a44->ra += 16;
+        handle->ra -= 2;                 
+        handle->ry += *(int16_t*)(handle->ra);
+        handle->ra += 16;
       } else {
         // Fallback option B: Inject saturation flags and step adjustment
-        a44->ry |= 0x08;
-        a44->ry += *(int16_t*)(a44->ra + 16);
-        a44->ra += 16;
+        handle->ry |= 0x08;
+        handle->ry += *(int16_t*)(handle->ra + 16);
+        handle->ra += 16;
       }
     }
   } else {
@@ -474,29 +474,29 @@ static uint8_t onef_r(A44_HANDLE* a44) {
 
     // addq.w #8, a3
     // addq.w #8, a3
-    a44->ra += 16;
+    handle->ra += 16;
 
     // add.w (a3),d2
-    int32_t next_ry = (int32_t)a44->ry + (*(int16_t*)(a44->ra));
+    int32_t next_ry = (int32_t)handle->ry + (*(int16_t*)(handle->ra));
 
     // Check for 16-bit signed overflow/underflow (bvc 1f)
     if (next_ry >= -32768 && next_ry <= 32767) {
       // No overflow: Accept the calculated predictor
-      a44->ry = (int16_t)next_ry;
+      handle->ry = (int16_t)next_ry;
     } else {
 
       // --- Negative Overflow Mitigation Branch ---
-      int16_t d5v = *(int16_t*)(a44->ra + 16);
+      int16_t d5v = *(int16_t*)(handle->ra + 16);
 
       // beq @f
       if (d5v != 0) {
         // Fallback option A: Pre-decrement and accumulate
-        a44->ra -= 2;
-        a44->ry += *(int16_t*)(a44->ra);
+        handle->ra -= 2;
+        handle->ry += *(int16_t*)(handle->ra);
       } else {
         // Fallback option B: Clear sign bit due to extreme floor saturation
         reg_d6_val &= 0xF7;
-        a44->ry += *(int16_t*)(a44->ra - 16);
+        handle->ry += *(int16_t*)(handle->ra - 16);
       }
     }
   }
@@ -505,20 +505,20 @@ static uint8_t onef_r(A44_HANDLE* a44) {
   // 1:
   // addq.w  #8,a3
   // addq.w  #8,a3
-  a44->ra += 16;
+  handle->ra += 16;
 
   // Resolve and merge final 4-bit ADPCM code value
   // or.w (a3), d6
-  reg_d6_val |= *((uint16_t*)(a44->ra));
+  reg_d6_val |= *((uint16_t*)(handle->ra));
 
   // Advance pointer to the structural jump-table vector
   // addq.w  #8,a3
   // addq.w  #8,a3
-  a44->ra += 16;
+  handle->ra += 16;
 
   // Perform dynamic state transition to the next lookup table index row
   // add.w (a3),a3
-  a44->ra += *((int16_t*)(a44->ra));
+  handle->ra += *((int16_t*)(handle->ra));
 
   return reg_d6_val;
 }
@@ -526,19 +526,19 @@ static uint8_t onef_r(A44_HANDLE* a44) {
 //
 //  onef_l: Replaces the core encoder macro for the Left channel
 //
-static uint8_t onef_l(A44_HANDLE* a44) {
+static uint8_t onef_l(A44_HANDLE* handle) {
 
   // 4-bit ADPCM code to be returned
   uint8_t reg_d7_val = 0;
 
   // Read 16-bit linear PCM input sample
   // move.w (a1)+,d5
-  int16_t pcm_value = *(int16_t*)(a44->pcma_add);
-  a44->pcma_add += 2;
+  int16_t pcm_value = *(int16_t*)(handle->pcma_add);
+  handle->pcma_add += 2;
 
   // Calculate delta from the current predictor value
   // sub.w d1, d5    
-  int16_t d5v = (int16_t)pcm_value - (int16_t)a44->ly; 
+  int16_t d5v = (int16_t)pcm_value - (int16_t)handle->ly; 
 
   // Compute absolute delta and set the ADPCM sign bit if negative
   // bpl.w @f
@@ -554,32 +554,32 @@ static uint8_t onef_l(A44_HANDLE* a44) {
   // bra  @f
   // 1: 
   // addq.w #4,a2
-  int16_t a2v_1 = *((int16_t*)a44->la);
+  int16_t a2v_1 = *((int16_t*)handle->la);
   if (d5v >= a2v_1) {
-    a44->la += 4;
+    handle->la += 4;
   } else {
-    a44->la -= 4;
+    handle->la -= 4;
   }
 
   // --- Binary Search Stage 2 ---
   // cmp.w (a2)+,d5
   // bcc.w @f
   // subq.w  #4,a2
-  int16_t a2v_2 = *(int16_t*)(a44->la);
-  a44->la += 2; // Emulate M68000 post-increment
+  int16_t a2v_2 = *(int16_t*)(handle->la);
+  handle->la += 2;
   if (d5v >= a2v_2) {
     // bcc.w @f
   } else {
-    a44->la -= 4; 
+    handle->la -= 4; 
   }
 
   // --- Binary Search Stage 3 ---
   // cmp.w (a2),d5
   // bcs @f
   // addq.w  #2,a2
-  int16_t a2v_3 = *(int16_t*)(a44->la);
+  int16_t a2v_3 = *(int16_t*)(handle->la);
   if (d5v >= a2v_3) {
-    a44->la += 2; 
+    handle->la += 2; 
   } else {
     // bcs @f
   }
@@ -587,7 +587,7 @@ static uint8_t onef_l(A44_HANDLE* a44) {
   // Finalize the base address offset within the LUT slot
   // addq.w  #8,a2
   // addq.w  #8,a2
-  a44->la += 16;
+  handle->la += 16;
 
   // Evaluate the processed sign bit to update the predictor
   // btst  #3,d7
@@ -596,30 +596,30 @@ static uint8_t onef_l(A44_HANDLE* a44) {
     // --- Positive Delta Predictor Update ---
 
     // add.w (a2),d1
-    int32_t next_ly = (int32_t)a44->ly + (*(int16_t*)(a44->la));
+    int32_t next_ly = (int32_t)handle->ly + (*(int16_t*)(handle->la));
 
     // Check for 16-bit signed overflow/underflow (bvc 3f)
     if (next_ly >= -32768 && next_ly <= 32767) {
       // No overflow: Accept the calculated predictor and jump forward
-      a44->ly = (int16_t)next_ly;
-      a44->la += 16;
+      handle->ly = (int16_t)next_ly;
+      handle->la += 16;
     } else {
 
       // --- Positive Overflow Mitigation Branch ---
       // Re-read and fallback to safe scale values
-      int16_t d5v = *(int16_t*)(a44->la + 32);
+      int16_t d5v = *(int16_t*)(handle->la + 32);
 
       // beq @f
       if (d5v != 0) {
         // Fallback option A: Pre-decrement and accumulate
-        a44->la -= 2;                 
-        a44->ly += *(int16_t*)(a44->la);
-        a44->la += 16;
+        handle->la -= 2;                 
+        handle->ly += *(int16_t*)(handle->la);
+        handle->la += 16;
       } else {
         // Fallback option B: Inject saturation flags and step adjustment
-        a44->ly |= 0x08;
-        a44->ly += *(int16_t*)(a44->la + 16);
-        a44->la += 16;
+        handle->ly |= 0x08;
+        handle->ly += *(int16_t*)(handle->la + 16);
+        handle->la += 16;
       }
     }
   } else {
@@ -628,29 +628,29 @@ static uint8_t onef_l(A44_HANDLE* a44) {
 
     // addq.w #8, a2
     // addq.w #8, a2
-    a44->la += 16;
+    handle->la += 16;
 
     // add.w  (a2),d1
-    int32_t next_ly = (int32_t)a44->ly + (*(int16_t*)(a44->la));
+    int32_t next_ly = (int32_t)handle->ly + (*(int16_t*)(handle->la));
 
     // Check for 16-bit signed overflow/underflow (bvc 1f)
     if (next_ly >= -32768 && next_ly <= 32767) {
       // No overflow: Accept the calculated predictor
-      a44->ly = (int16_t)next_ly;
+      handle->ly = (int16_t)next_ly;
     } else {
 
       // --- Negative Overflow Mitigation Branch ---
-      int16_t d5v = *(int16_t*)(a44->la + 16);
+      int16_t d5v = *(int16_t*)(handle->la + 16);
 
       // beq @f
       if (d5v != 0) {
         // Fallback option A: Pre-decrement and accumulate
-        a44->la -= 2;
-        a44->ly += *(int16_t*)(a44->la);
+        handle->la -= 2;
+        handle->ly += *(int16_t*)(handle->la);
       } else {
         // Fallback option B: Clear sign bit due to extreme floor saturation
         reg_d7_val &= 0xF7;
-        a44->ly += *(int16_t*)(a44->la - 16);
+        handle->ly += *(int16_t*)(handle->la - 16);
       }
     }
   }
@@ -659,20 +659,20 @@ static uint8_t onef_l(A44_HANDLE* a44) {
   // 1:
   // addq.w  #8,a2
   // addq.w  #8,a2
-  a44->la += 16;
+  handle->la += 16;
 
   // Resolve and merge final 4-bit ADPCM code value
   // or.w (a2), d7
-  reg_d7_val |= *((uint16_t*)(a44->la));
+  reg_d7_val |= *((uint16_t*)(handle->la));
 
   // Advance pointer to the structural jump-table vector
   // addq.w  #8,a2
   // addq.w  #8,a2
-  a44->la += 16;
+  handle->la += 16;
 
   // Perform dynamic state transition to the next lookup table index row
   // add.w (a2),a2
-  a44->la += *((int16_t*)(a44->la));
+  handle->la += *((int16_t*)(handle->la));
 
   return reg_d7_val;
 }
