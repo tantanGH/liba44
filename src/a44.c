@@ -54,13 +54,13 @@ static int16_t get_val(int16_t d2, int16_t d0) {
 static void a44_make_buffer_internal(A44_HANDLE* handle) {
 
   EnclutElement* lut = (EnclutElement*)encode_lut;
-    
-  // アセンブラの BUFFER_ADR の代わり（lutの先頭アドレス）
   uintptr_t buffer_base = (uintptr_t)lut;
 
-  for (int16_t d0 = 0; d0 < (68 + 2); d0++) { // CMP.B #bufx+2, D0
+  for (int16_t d0 = 0; d0 <= 69; d0++) { // CMP.B #bufx+2, D0
     EnclutElement* slot = &lut[d0];
-    int16_t d2 = table3[d0];
+    
+    // table3 からのワード読み出し（d0を2倍する）
+    int16_t d2 = *(int16_t*)((uintptr_t)table3 + (d0 * 2));
 
     // --- 1. MAKE_BAI ---
     int16_t d1 = 1;
@@ -69,24 +69,23 @@ static void a44_make_buffer_internal(A44_HANDLE* handle) {
     int a5_idx = 0;
 
     do {
-      // 前半部 (A3, A5)
-      int32_t d3 = (int32_t)d2 * d1;
-      slot->search_origin[a3_idx++] = (int16_t)(d3 < 0 ? (d3 - 7) / 8 : d3 / 8); // LSR.L #3
 
-      d3 = (int32_t)d2 * d1;
-      d3 = -d3;
-      // 符号付き右シフト (ASR.L #3)
-      slot->minus_scale[a5_idx++] = (int16_t)(d3 < 0 ? (d3 - 7) / 8 : d3 / 8); 
+      uint32_t d3_u = (uint32_t)(uint16_t)d2 * (uint32_t)(uint16_t)d1;
 
-      // 後半部 (A4)
+      slot->search_origin[a3_idx++] = (int16_t)(d3_u >> 3);
+
+      int32_t d3_s = -(int32_t)d3_u;
+      slot->minus_scale[a5_idx++] = (int16_t)(d3_s >> 3);
+
       d1++; // ADDQ.W #1
-      d3 = (int32_t)d2 * d1;
-      slot->plus_scale[a4_idx++] = (int16_t)(d3 < 0 ? (d3 - 7) / 8 : d3 / 8);
+      
+      d3_u = (uint32_t)(uint16_t)d2 * (uint32_t)(uint16_t)d1; // mulu
+      slot->plus_scale[a4_idx++] = (int16_t)(d3_u >> 3);
 
       d1++; // ADDQ.W #1
     } while (d1 < 17);
 
-    // MOVE.W D2, -(A4) の再現（plus_scaleの最後の要素を上書きしている）
+    // MOVE.W D2, -(A4)
     slot->plus_scale[7] = d2;
 
     // --- 2. MAKE_CODE ---
@@ -99,16 +98,10 @@ static void a44_make_buffer_internal(A44_HANDLE* handle) {
       int16_t next_idx = table4W[i];
       next_idx = get_val(next_idx, d0); // BSR GET_VAL
 
-      // 次のインデックスのスロットへの物理アドレスを計算
       uintptr_t next_slot_addr = buffer_base + (next_idx * 80);
-            
-      // アセンブラの現在の書き込み位置 A3 (next_offset[i] のアドレス)
       uintptr_t current_a3_addr = (uintptr_t)&(slot->next_offset[i]);
 
-      // SUB.L A3, D2  -> (次アドレス - 現在のアドレス)
       int32_t rel_addr = (int32_t)(next_slot_addr - current_a3_addr);
-            
-      // ADD.L #6, d2
       rel_addr += 6;
 
       slot->next_offset[i] = (int16_t)rel_addr;
