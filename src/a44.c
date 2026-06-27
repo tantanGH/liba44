@@ -730,9 +730,8 @@ void a44_ptoa_make_buffer(A44_HANDLE* handle) {
   a44_make_buffer_internal(handle);
 
   // #BUFFER+6
-  uintptr_t base_buffer = *(uint32_t*)encode_lut; 
-  handle->ra = base_buffer + 6;
-  handle->la = base_buffer + 6;
+  handle->ra = (uintptr_t)encode_lut + 6;
+  handle->la = (uintptr_t)encode_lut + 6;
 
   // 念の為
   handle->back = 0;
@@ -761,9 +760,8 @@ void a44_ptoa_init(A44_HANDLE* handle, int16_t mode) {
   handle->lx1 = 0;
 
   // #BUFFER+6
-  uintptr_t base_buffer = *(uint32_t*)encode_lut; 
-  handle->ra = base_buffer + 6;
-  handle->la = base_buffer + 6;
+  handle->ra = (uintptr_t)encode_lut + 6;
+  handle->la = (uintptr_t)encode_lut + 6;
 
   // 念の為
   handle->back = 0;
