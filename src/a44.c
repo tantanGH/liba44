@@ -193,9 +193,9 @@ static void make_decoding_lut(A44_HANDLE* handle) {
 }
 
 //
-//  a44_conv_mono: Monaural decoding stream core
+//  conv_mono: Monaural decoding stream core
 //
-static void a44_conv_mono(A44_HANDLE* handle, uint32_t adpcm_bytes) {
+static void conv_mono(A44_HANDLE* handle, uint32_t adpcm_bytes) {
 
   if (adpcm_bytes == 0) return;
 
@@ -233,9 +233,9 @@ static void a44_conv_mono(A44_HANDLE* handle, uint32_t adpcm_bytes) {
 }
 
 //
-//  a44_conv_stereo: Stereo decoding stream core
+//  conv_stereo: Stereo decoding stream core
 //
-static void a44_conv_stereo(A44_HANDLE* handle, uint32_t adpcm_bytes) {
+static void conv_stereo(A44_HANDLE* handle, uint32_t adpcm_bytes) {
 
   // Since L and R channels are interleaved byte by byte,
   // the total loop count is calculated as (total_bytes / 2).
@@ -288,9 +288,9 @@ static void a44_conv_stereo(A44_HANDLE* handle, uint32_t adpcm_bytes) {
 }
 
 //
-//  a44_conv_monon: Monaural dummy decoding (State/Context updates only)
+//  conv_monon: Monaural dummy decoding (State/Context updates only)
 //
-static void a44_conv_monon(A44_HANDLE* handle, uint32_t adpcm_bytes) {
+static void conv_monon(A44_HANDLE* handle, uint32_t adpcm_bytes) {
 
   if (adpcm_bytes == 0) return;
 
@@ -322,9 +322,9 @@ static void a44_conv_monon(A44_HANDLE* handle, uint32_t adpcm_bytes) {
 }
 
 //
-//  a44_conv_stereon: Stereo dummy decoding (State/Context updates only)
+//  conv_stereon: Stereo dummy decoding (State/Context updates only)
 //
-static void a44_conv_stereon(A44_HANDLE* handle, uint32_t adpcm_bytes) {
+static void conv_stereon(A44_HANDLE* handle, uint32_t adpcm_bytes) {
 
   // Since L and R channels are interleaved byte by byte,
   // the total loop count is calculated as (total_bytes / 2).
@@ -855,10 +855,10 @@ void a44_atop_exec(A44_HANDLE* handle, const uint8_t* adpcm_addr, uint32_t adpcm
   // tst.w stereo(a6) / bne @f
   if (handle->stereo == 0) {
     // Replaces 'bsr conv_mono'
-    a44_conv_mono(handle, adpcm_bytes);
+    conv_mono(handle, adpcm_bytes);
   } else {
     // Replaces 'bsr conv_stereo'
-    a44_conv_stereo(handle, adpcm_bytes);
+    conv_stereo(handle, adpcm_bytes);
   }
 }
 
@@ -932,10 +932,10 @@ void a44_atop_null_exec(A44_HANDLE* handle, const uint8_t* adpcm_addr, uint32_t 
   // Check channel mode to dispatch to the corresponding dummy decoding engine
   if (handle->stereo == 0) {
     // Replaces 'bsr conv_monon'
-    a44_conv_monon(handle, adpcm_bytes);
+    conv_monon(handle, adpcm_bytes);
   } else {
     // Replaces 'bsr conv_stereon'
-    a44_conv_stereon(handle, adpcm_bytes);
+    conv_stereon(handle, adpcm_bytes);
   }
 }
 
